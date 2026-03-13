@@ -149,8 +149,188 @@
 // n.startsWith("A"));
 // console.log(todosComecamComA);
 
-const valores = [1, 2, 3, 4];
-const soma = valores.reduce((ac, v) => ac + v); // O método reduce() executa uma função de redução em cada elemento do array, resultando em um único valor. No exemplo acima, a função de redução é uma função de soma que acumula os valores do array. O resultado final é a soma de todos os elementos do array, que é 10.
-console.log(soma)
+// const valores = [1, 2, 3, 4];
+// const soma = valores.reduce((ac, v) => ac + v); // O método reduce() executa uma função de redução em cada elemento do array, resultando em um único valor. No exemplo acima, a função de redução é uma função de soma que acumula os valores do array. O resultado final é a soma de todos os elementos do array, que é 10.
+// console.log(soma)
 
 //--------------------------------------------------------------
+
+// 1.6 Funções
+
+// Funções são blocos de código reutilizáveis que realizam uma tarefa específica. Em JavaScript, as funções podem ser declaradas de várias maneiras, incluindo declarações de função, expressões de função e funções arrow.
+
+// Declaração de função
+
+// function hello(){
+//     console.log("Hello, world!");
+// }
+// hello(); // Saída: Hello, world! e redefinimos a função sem parâmetros, o que é permitido em JavaScript. A função hello() pode ser chamada sem argumentos, e ela simplesmente imprime "Hello, world!" no console.
+
+// function hello(name){
+//     console.log('Hello, ' + name)
+// }
+
+// hello('Leonardo');
+
+// function soma(a,b){
+//     return a + b;
+// }
+
+// //Tambémépossível criar funçõesanônimas. Umavezcriadas, elas podem ser
+// atribuídas a variáveis ou constantes, como no Bloco de Código
+
+// const dobro = function(n){
+//     return n * 2;
+// }
+// const res = dobro(4);
+// console.log(res);
+
+// // valor padrão para parâmetros
+
+// const triplo = function( n = 5){
+//     return n * 3;
+// }
+// console.log(triplo()); // Saída: 15 (usa o valor padrão de n)
+// console.log(triplo(4)); // Saída: 12 (usa o valor fornecido de n)
+
+// Arrow function
+
+//Regras: quando a função tem apenas um parâmetro, os parênteses podem ser omitidos. Se a função tem mais de um parâmetro, os parênteses são obrigatórios. Se a função tem um corpo de expressão única, as chaves e a palavra-chave return podem ser omitidas. Se a função tem um corpo de múltiplas expressões, as chaves são obrigatórias e a palavra-chave return deve ser usada para retornar um valor.Quando o corpo possui uma única instrução que produz um valor a ser
+// devolvido, a instrução return é opcional: Se usar as chaves, deve-se usar o
+// return. Caso contrário, ele não pode ser usado.
+
+// ----------------------------------------------------------------------
+
+//1.7 Closures
+
+//Primeiro, em Javascript, funcões são cidadãs de primeira
+// classe. Informalmente, um cidadão de primeira classe em uma linguagem de
+// programação é uma entidade que oferece suporte a operações como as seguintes.
+// Ser passada como argumento para uma função.
+// Ser devolvida por uma função.
+// Ser atribuída a uma variável
+
+// Função de alta ordem é uma função que pode receber outra função como argumento ou retornar uma função como resultado.
+
+/*Uma função pode ser atribuída a uma variável */
+
+// let umaFuncao = function (){
+//     console.log('Fui armazenada em uma variável');
+// }
+
+// e pode ser chamada usando essa variável
+// umaFuncao(); // Saída: Fui armazenada em uma variável
+
+/* f recebe uma função como parâmetro e, por isso é uma função de alta ordem. Por devolver uma função, g também é de alta ordem*/
+
+//  function f(funcao){
+// //     //chamando a função
+// //     //tipagem dinâmica: funcao pode ser qualquer coisa, mas se for uma função, ela será chamada
+//   funcao();
+//  }
+
+// function g(){
+//     function outraFuncao(){
+//         console.log('Fui criada por g');
+//     }
+//     return outraFuncao;
+// }
+// // f pode ser chamada assim 
+// f (function(){
+//     console.log('Estou sendo processada')
+// })
+
+// //e g pode ser chamada assim
+// const gResult = g()
+// // e assim tbm
+// g()()
+// // outros testes
+// /* f chama g, que somente devolve uma função, mas nada é exibido*/
+// f(g)
+// //f chama a função devolvida por g - "Fui criada por g"
+// f(g())
+// /*f tenta chamar o que a função criada por g
+// devolve. Ela não devolve coisa alguma.Por isso,
+// um erro -somente em tempo de execução-acontece. */
+// f(g()())// TypeError: funcao is not a function
+
+// f(1) // TypeError: funcao is not a function
+
+/* Uma função, quando definida por outra, é chamada função interna e tem dois
+escopos: o escopo interno e o escopo externo. Seu escopo interno é delimitado
+pelas chaves que de nem seu corpo. Seu escopo externo é delimitado pelas chaves
+que de nem ocorpo da função que a de ne. Seu escopo externo é também chamado
+de escopo léxico. Uma função interna pode acessar as variáveis de nidas em seu
+escopo externo*/
+
+//function f (){
+    // let nome = ' João'
+    // function g (){
+    //     console.log('Olá, ' + nome)
+    // }
+    // g();// Saída: Olá, João
+//}
+//f()// Saída: Olá, João
+
+/* A função g é uma função interna de f e tem acesso à variável nome, que está no escopo externo de g. Quando f é chamada, ela define a variável nome e depois chama g, que imprime "Olá, João" no console. Isso demonstra o conceito de closure, onde a função interna (g) tem acesso às variáveis do escopo externo (f) mesmo após a execução de f ter terminado. */
+
+/*Os exemplos exibidos abaixo funcionam, muito embora as
+funções ola e saudacoesFactory já tenham terminado a sua execução no momento
+em que as funções que produzem são chamadas, o que sugere que suas variáveis
+locais já não estão acessíveis.*/
+
+// function ola(){
+//     let nome = ' João'
+//     return function(){
+//         console.log('Olá, João');
+//     }
+// }
+
+// let olaResult = ola();
+// /*perceba que aqui a função ola já terminou.
+// É de se esperar que a variável nome já não
+// possa ser acessada.*/
+// olaResult(); // Saída: Olá, João
+
+// // também vale com parâmetros 
+// function saudacoesFactory(saudacao, nome){
+//     return function(){
+//         console.log(saudacao + ', ' + nome);
+//     }
+// }
+
+// let saudacao1 = saudacoesFactory('Olá', 'Maria');
+// let saudacao2 = saudacoesFactory('tchau', 'Pedro');
+
+// saudacao1(); // Saída: Olá, Maria
+// saudacao2(); // Saída: tchau, Pedro
+
+// O exemplo abaixo mostra que as funções internas têm acesso às variáveis do escopo externo, mesmo que o escopo externo tenha sido modificado após a criação das funções internas. Isso ocorre porque as funções internas mantêm uma referência ao escopo externo, permitindo que acessem as variáveis mesmo após a execução do escopo externo ter terminado.
+
+/*Uma função interna em conjunto com as variáveis de seu escopo ex
+terno é o que chamamos de closure*/
+
+// ALguns casos contra - intuitivos de closures
+
+function eAgora(){
+    let cont = 1;
+    function f1 (){
+     console.log (cont);
+    }
+    cont++;
+    function f2 (){
+     console.log (cont);
+    }
+    //JSON contendo as duas funções
+    return {f1, f2}
+}
+let eAgoraResult = eAgora();
+/* neste momento, a funcao eAgora já
+executou por completo e a variável
+cont já foi incrementada. Seu valor final
+é mantido e, assim, ambas f1 e f2 exibirão 2.
+*/
+eAgoraResult.f1(); // Saída: 2
+eAgoraResult.f2(); // Saída: 2
+
+// O exemplo abaixo mostra que as funções internas têm acesso às variáveis do escopo externo, mesmo que o escopo externo tenha sido modificado após a criação das funções internas. Isso ocorre porque as funções internas mantêm uma referência ao escopo externo, permitindo que acessem as variáveis mesmo após a execução do escopo externo ter terminado.
