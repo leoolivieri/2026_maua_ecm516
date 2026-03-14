@@ -504,6 +504,7 @@ terno é o que chamamos de closure*/
 // 1 + 2 + 3 + ... + n
 //demorando...
 const calculoDemorado = (n) => {
+    let cont = 0;
     for(let i = 1; i <= n; i++)
         cont += 1
     return cont
