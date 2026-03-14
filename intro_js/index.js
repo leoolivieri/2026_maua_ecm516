@@ -312,26 +312,26 @@ terno é o que chamamos de closure*/
 
 // ALguns casos contra - intuitivos de closures
 
-function eAgora(){
-    let cont = 1;
-    function f1 (){
-     console.log (cont);
-    }
-    cont++;
-    function f2 (){
-     console.log (cont);
-    }
-    //JSON contendo as duas funções
-    return {f1, f2}
-}
-let eAgoraResult = eAgora();
-/* neste momento, a funcao eAgora já
-executou por completo e a variável
-cont já foi incrementada. Seu valor final
-é mantido e, assim, ambas f1 e f2 exibirão 2.
-*/
-eAgoraResult.f1(); // Saída: 2
-eAgoraResult.f2(); // Saída: 2
+// function eAgora(){
+//     let cont = 1;
+//     function f1 (){
+//      console.log (cont);
+//     }
+//     cont++;
+//     function f2 (){
+//      console.log (cont);
+//     }
+//     //JSON contendo as duas funções
+//     return {f1, f2}
+// }
+// let eAgoraResult = eAgora();
+// /* neste momento, a funcao eAgora já
+// executou por completo e a variável
+// cont já foi incrementada. Seu valor final
+// é mantido e, assim, ambas f1 e f2 exibirão 2.
+// */
+// eAgoraResult.f1(); // Saída: 2
+// eAgoraResult.f2(); // Saída: 2
 
 // O exemplo abaixo mostra que as funções internas têm acesso às variáveis do escopo externo, mesmo que o escopo externo tenha sido modificado após a criação das funções internas. Isso ocorre porque as funções internas mantêm uma referência ao escopo externo, permitindo que acessem as variáveis mesmo após a execução do escopo externo ter terminado.
 
@@ -342,24 +342,178 @@ eAgoraResult.f2(); // Saída: 2
 //Uma pessoa se chama Maria, tem 21 anos e mora na Rua B, número 50
 // {} objeto js
 
-let pessoa = {
-    nome: 'João',
-    idade: 17,
-}
-console.log("Me chamo " + pessoa.nome);
-console.log("Tenho " + pessoa["idade"] + " anos")
+// let pessoa = {
+//     nome: 'João',
+//     idade: 17,
+// }
+// console.log("Me chamo " + pessoa.nome);
+// console.log("Tenho " + pessoa["idade"] + " anos")
 
-const pessoa2 = {
-    nome: 'Maria',
-    idade: 21,
-    endereco: {//
-        logradouro: 'Rua B',
-        numero: 50,
-    },
+// const pessoa2 = {
+//     nome: 'Maria',
+//     idade: 21,
+//     endereco: {//
+//         logradouro: 'Rua B',
+//         numero: 50,
+//     },
+// }
+// console.log(pessoa2.endereco.logradouro)
+// console.log(pessoa2['endereco']['numero'])
+// console.log(pessoa2.endereco['logradouro'])
+// console.log(pessoa2['endereco'].numero)
+// console.log(pessoa2)
+// console.log(pessoa2.endereco)
+
+//Uma concessionária tem nome, CNPJ, e endereço(logradouro, número e bairro.)Ela também tem seu estoque de veículos. A quantidade de veículos é arbitrária. A qualquer instante, ela pode ter 2 ou 5 ou 17 veículos. Cada vículo tem marca, modelo e placa.
+
+// let concessionaria = {
+//     nome : 'Samavel',
+//     cnpj : '00.000.000/0000-00',
+//     endereco: {
+//         logradouro: 'Rua Mauá',
+//         numero: 100,
+//         bairro: {
+//             nome: 'Centro',
+//         }
+//     },
+//     estoque:[
+//         {
+//             marca:' Toyota',
+//             modelo: 'Etios',
+//             placa:'FJD4F03'
+//         },
+//         {
+//             marca:  'Toyota',
+//             modelo: 'Corolla',
+//             placa: 'FJD4F04'
+//         }
+
+//     ]
+        
+// }
+
+// console.log(concessionaria.estoque[0].modelo)
+// // outro modo de acessar o modelo do primeiro veículo
+// console.log(concessionaria['estoque'][0]['modelo'])
+
+
+//Uma calculadora realiza as quatro operações fundamentais
+// soma: representado por uma arrow function que faz return
+//subtracao: representado por uma arrow function sem return
+// multiplicacao: representado por uma função tradicional
+//divisao: a escolha
+//todas elas operam com dois operandos
+    
+
+// const calculadora = {
+//     operacoes: {
+//         soma: (a,b) => {return a + b},
+//         subtracao: (a,b) => a-b,
+//         multiplicacao: function(a,b){
+//             return a*b
+//         },
+//         divisao: (a,b) => a/b
+//     }
+
+// }    
+// console.log(calculadora.operacoes.soma(2,3))
+// console.log(calculadora['operacoes']['subtracao'](2,3)) //outra maneira de fazer soma
+
+// 3
+
+// console.log('Eu primeiro...')
+// console.log('Agora eu')
+// console.log('Sempre serei a ultima')
+
+// const a = 5 + 6
+// const b = 9 * 4
+// console.log(a + b)
+
+// setTimeout(()=> {
+//     console.log("Agendada pela setTimeout")
+// }, 0)
+// const dateAtual = new Date().getTime() + 5000
+//     while(new Date().getTime() <= dateAtualMais2Segundos);
+// console.log("Terminando o script principal...")
+
+// const a = 2 + 3
+// const b = 6 * 1
+
+// setTimeout(() => {
+//     const d = demorada()
+//     console.log(`d: ${d}`)
+// }, 500)
+// // const d = demoarada()
+// const e = a + b * 2
+// console.log(`e: ${e}`)
+
+
+// function demorada(tempo){
+//     const dateAtualMaisTempo = new Date().getTime() + tempo
+//     while(new Date().getTime() <= dateAtualMaisTempo);
+//     const d = 8 + 2 * 16
+//     console.log(`Demoarada com tempo: ${tempo}`)
+//     return d
+// }
+// setTimeout(() => {
+//     demorada(5000)
+// }, 5000)
+
+// setTimeout(() => {
+//     demorada(1000)
+// }, 1000)
+
+// console.log('Fim do script')
+
+
+//CPU Bound: predominantemente por ciclos de CPU 
+//IO Bound: predominantemente por operações entrada e saída
+
+// Assincrono não bloqueante
+// const fs = require ('fs')
+// const nomeArquivo = 'arquivo.txt'
+// //função callback
+// const exibirConteudo = (erro, conteudo) => {
+//     console.log
+//     if(erro){
+//         console.log(`Deu erro: ${erro}`)
+//     }
+//     else{
+//         console.log(`Conteudo: ${conteudo}`)
+//         const dobro = Number(conteudo.toString()) * 2
+//         //mais uma função callback
+//         const finalizar = (erro) => {
+//             console.log( erro ? "Deu certo ao escrever o dobro": "Ok, escreveu o dobro")
+//             console.log('C')
+//             const exibirDobro = (erro, conteudo) => {
+//                 console.log('E')
+//                 console.log(erro ? "DEu erro lendo o dobro" : `Dobro: ${conteudo.toSTring()}`)
+//             }
+//             fs.readFile('dobro.txt', exibirDobro)
+//             console.log('F')
+//         }
+//         fs.writeFile('dobro.txt', dobro.toString(), finalizar)
+//         console.log('D')
+//     }
+// }
+// fs.readFile(nomeArquivo, exibirConteudo)
+// console.log('B')
+
+
+// promises
+// 1 + 2 + 3 + ... + n
+//demorando...
+const calculoDemorado = (n) => {
+    for(let i = 1; i <= n; i++)
+        cont += 1
+    return cont
 }
-console.log(pessoa2.endereco.logradouro)
-console.log(pessoa2['endereco']['numero'])
-console.log(pessoa2.endereco['logradouro'])
-console.log(pessoa2['endereco'].numero)
-console.log(pessoa2)
-console.log(pessoa2.endereco)
+
+const res = calculoDemorado(10000)
+console.log(res)
+
+
+
+    
+
+
