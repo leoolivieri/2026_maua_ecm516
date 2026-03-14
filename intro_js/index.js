@@ -334,3 +334,32 @@ eAgoraResult.f1(); // Saída: 2
 eAgoraResult.f2(); // Saída: 2
 
 // O exemplo abaixo mostra que as funções internas têm acesso às variáveis do escopo externo, mesmo que o escopo externo tenha sido modificado após a criação das funções internas. Isso ocorre porque as funções internas mantêm uma referência ao escopo externo, permitindo que acessem as variáveis mesmo após a execução do escopo externo ter terminado.
+
+// 2.0 JSON - Javascript Object Notation - é um formato de dados leve e fácil de ler, usado para armazenar e transportar dados. Ele é baseado em uma sintaxe de objetos JavaScript, mas é independente de linguagem, o que significa que pode ser usado em várias linguagens de programação. No exemplo acima, um objeto JSON é criado contendo as funções f1 e f2, permitindo que elas sejam acessadas externamente mesmo após a execução da função eAgora ter terminado.
+
+//JSON: JavaScript Object Notation
+//Uma pessoa que se chama João e tem 17 anos
+//Uma pessoa se chama Maria, tem 21 anos e mora na Rua B, número 50
+// {} objeto js
+
+let pessoa = {
+    nome: 'João',
+    idade: 17,
+}
+console.log("Me chamo " + pessoa.nome);
+console.log("Tenho " + pessoa["idade"] + " anos")
+
+const pessoa2 = {
+    nome: 'Maria',
+    idade: 21,
+    endereco: {//
+        logradouro: 'Rua B',
+        numero: 50,
+    },
+}
+console.log(pessoa2.endereco.logradouro)
+console.log(pessoa2['endereco']['numero'])
+console.log(pessoa2.endereco['logradouro'])
+console.log(pessoa2['endereco'].numero)
+console.log(pessoa2)
+console.log(pessoa2.endereco)
