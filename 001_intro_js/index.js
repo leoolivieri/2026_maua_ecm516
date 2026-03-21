@@ -500,21 +500,83 @@ terno é o que chamamos de closure*/
 // console.log('B')
 
 
-// promises
-// 1 + 2 + 3 + ... + n
-//demorando...
-const calculoDemorado = (n) => {
-    let cont = 0;
-    for(let i = 1; i <= n; i++)
-        cont += 1
-    return cont
-}
 
-const res = calculoDemorado(10000)
-console.log(res)
 
+
+//Definição de callback: define, mas não há chamada de função. Ela é passada como argumento para outra função, que a chama quando necessário. Por exemplo:
+
+// function processarDados(dados, callback) {   
 
 
     
 
+// 3.3 Promises
 
+// Uma Promise é um objeto que representa a eventual conclusão ou falha de uma operação assíncrona e seu valor resultante. Ela pode estar em um dos três estados: pendente, resolvida (fulfilled) ou rejeitada (rejected). As Promises permitem que você escreva código assíncrono de forma mais legível e fácil de entender, evitando o chamado "callback hell" (inferno dos callbacks).
+
+//Promise pending: a Promise está em um estado pendente, o que significa que a operação assíncrona ainda não foi concluída. Nesse estado, a Promise não tem um valor definido e não sabe se será resolvida ou rejeitada no futuro.
+
+//Promise fulfilled: a Promise foi resolvida com sucesso, o que significa que a operação assíncrona foi concluída e um valor resultante está disponível. Nesse estado, a Promise tem um valor definido e pode ser acessado usando o método .then().
+
+// promises: podemos usar function ou arrow function, mas a função deve retornar uma Promise. 
+// 1 + 2 + 3 + ... + n
+//demorando...
+//Computação demorada:
+
+// const calculoDemorado = (n) => {
+//     let cont = 0;
+//     for(let i = 1; i <= n; i++)
+//         cont += i
+//     return cont
+// }
+
+//console.log(res)
+// console.log('A')
+// const calculoDemorado = (n) => {
+//     return new Promise((resolve, reject) => {
+//         //se n for negativo propagar um erro
+//         //caso contrário, continua como já era
+//         if (n >= 0) {
+//             let cont = 0
+//             for (let i = 1; i <= n; i++) {
+//                 cont += i
+//             }
+//             resolve(cont)
+//         }
+//         else {
+//             reject(new Error('n deve ser maior ou igual a zero'))
+//         }
+//     })
+// }
+// const minhaPromise = calculoDemorado(-1000)
+// //then/catch
+// minhaPromise
+// .then((resultado) => {
+//     console.log(`Resultado: ${resultado}`)
+// })
+// .catch((erro) => { console.log('Resultado: ${resultado}')})
+
+
+// console.log('B')
+
+// const calculoRapidinho = (n) => {
+//     return n >= 0 ?Promise.resolve((n/2) *( n + 1)) : Promise.reject('Apenas valores maiores ou iguais a zero, por favor')
+// }
+// calculoRapidinho(10000)
+// .then(function(resultado){console.log('Resultado: '+ resultado)})
+// .catch(erro => console.log('Erro: ${erro} '))
+
+// calculoRapidinho(-10000)
+// .then(function(resultado){console.log('Resultado: '+ resultado)})
+// .catch(erro => console.log('Erro: ${erro} '))
+
+// calculoRapidinho(10)
+// .then((resultado) => {
+//     calculoRapidinho(resultado).then((resultado2) => {
+//         calculoRapidinho(resultado2).then((resultado3) => {
+//             calculoRapidinho(resultado3).then((resultado4) => {
+//                 console.log(resultado4)
+//             })
+//         })
+//     })
+// })
