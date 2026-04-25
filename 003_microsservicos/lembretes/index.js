@@ -24,7 +24,7 @@ app.post('/lembretes', (req, res) => {
     //incrementar o id
     id++
     //extrair a propriedade texto do corpo req
-    const { texto} = req.body
+    const { texto} = req.body // {texto} desestruturação: pega só o necessário
     //cadastrar na base, tal como o exemplo
     lembretes[id] = {
         id: id,
