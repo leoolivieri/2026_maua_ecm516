@@ -29,6 +29,11 @@ app.post('/lembretes', async (req, res) => {
     res.status(200).send(lembretes[contador]) // retorna o lembrete criado
 })
 
+app.post ('/eventos', (req, res) => {
+    console.log('Recebido evento', req.body.tipo)
+    res.end({})
+})
+
 app.listen(4000, () => {
     console.log('Lembretes. Porta 4000.')
 })
