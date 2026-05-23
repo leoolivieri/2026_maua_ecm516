@@ -13,6 +13,14 @@ const funcoes = {
         const observacoes = baseConsulta[observacao.lembreteId]['observacoes'] || []
         observacoes.push(observacao)
         baseConsulta[observacao.lembreteId]['observacoes'] = observacoes
+    },
+    ObservacaoAtualizada: (observacao) => {
+        const observacoes =
+            baseConsulta[observacao.lembreteId]['observacoes']
+        const indice = 
+            observacoes.findIndex(o => o.id === observacao.id)
+        observacoes[indice] = observacao
+
     }
 } 
 
