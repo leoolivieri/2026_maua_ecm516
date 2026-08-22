@@ -19,7 +19,8 @@ app.post('/lembretes', async (req, res) => {
 
     // emite evento para barramento de eventos
     // porta 10000 é onde o barramento de eventos está rodando
-    await axios.post("http://localhost:10000/eventos", {
+    // await axios.post("http://localhost:10000/eventos", {
+    await axios.post("http://barramento:10000/eventos", {
         tipo: 'LembreteCriado',
         dados: {contador, texto} // equivale a { contador: 1, texto: "Fazer café" }
     })
