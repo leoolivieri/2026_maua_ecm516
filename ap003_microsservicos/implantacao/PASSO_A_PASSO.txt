@@ -1,0 +1,1070 @@
+================================================================================
+ ECM516 - ap003_microsservicos
+ PASSO A PASSO
+   PARTE A: implantar a solucao completa no Kubernetes  -> imagens tag 1.0.0
+   PARTE B: implementar Richardson nivel 3 (HATEOAS)    -> imagens tag 2.0.0
+================================================================================
+
+SUMARIO
+  0. Pre-requisitos e mapa da solucao
+  1. Correcoes obrigatorias antes de implantar
+  2. Build e publicacao das imagens 1.0.0 no Docker Hub
+  3. Manifests do Kubernetes
+  4. Implantacao e teste da solucao completa
+  5. Richardson nivel 3 (HATEOAS) - o que mudar em cada servico
+  6. Build e publicacao das imagens 2.0.0 no Docker Hub
+  7. Atualizar o cluster de 1.0.0 para 2.0.0 (e rollback)
+  ANEXO A - Comandos de diagnostico
+  ANEXO B - Ingress (opcional, melhora o HATEOAS)
+  ANEXO C - Checklist de entrega
+
+  Convencao usada neste arquivo:
+    [PS]   = execute no PowerShell
+    [ARQ]  = edite/crie um arquivo
+    [K8S]  = comando kubectl
+  Todos os caminhos sao relativos a ap003_microsservicos/
+
+
+================================================================================
+ 0. PRE-REQUISITOS E MAPA DA SOLUCAO
+================================================================================
+
+0.1 Conta no Docker Hub. Este arquivo assume o usuario "leoolivieri".
+    Se o seu ID for outro, troque em TODOS os comandos e manifests.
+
+0.2 Docker Desktop instalado (voce ja tem: Docker 29.1.2).
+
+0.3 Habilitar o Kubernetes no Docker Desktop:
+    Settings > Kubernetes > marcar "Enable Kubernetes" > Apply & Restart.
+    Espere o indicador de Kubernetes ficar verde (pode levar alguns minutos).
+
+0.4 Conferir que o kubectl esta apontando para o cluster local:
+    [PS] kubectl config get-contexts
+    [PS] kubectl config use-context docker-desktop
+    [PS] kubectl get nodes
+    Resultado esperado: um node chamado "docker-desktop" com STATUS Ready.
+
+0.5 MAPA DA SOLUCAO (5 microsservicos)
+
+    +-------------------+-------+------------------------------------------+
+    | pasta             | porta | papel                                    |
+    +-------------------+-------+------------------------------------------+
+    | barramento        | 10000 | recebe eventos e replica para os outros  |
+    | lembretes         |  4000 | CRUD de lembretes                        |
+    | observacoes       |  5001 | observacoes de um lembrete               |
+    | classificacao     |  7000 | classifica observacao (importante/normal)|
+    | consulta          |  6000 | base de leitura agregada (CQRS)          |
+    +-------------------+-------+------------------------------------------+
+
+0.6 FLUXO DE EVENTOS que a solucao completa precisa fechar:
+
+    lembretes     --LembreteCriado---------> barramento
+    barramento    --LembreteCriado---------> consulta
+    observacoes   --ObservacaoCriada-------> barramento
+    barramento    --ObservacaoCriada-------> classificacao, consulta
+    classificacao --ObservacaoClassificada-> barramento
+    barramento    --ObservacaoClassificada-> observacoes
+    observacoes   --ObservacaoAtualizada---> barramento
+    barramento    --ObservacaoAtualizada---> consulta
+
+    Guarde este fluxo: e por ele que voce valida a implantacao no passo 4.
+
+0.7 NOMES QUE VAMOS USAR NO KUBERNETES (decore, o codigo referencia eles)
+
+    +---------------+------------------------------------------------+-------+
+    | servico       | nome do Service (DNS interno)                  | Node  |
+    |               |                                                | Port  |
+    +---------------+------------------------------------------------+-------+
+    | barramento    | ecm516-20262-barramento-de-eventos-service     |  ---  |
+    | lembretes     | ecm516-20262-lembretes-clusterip-service       | 30000 |
+    | observacoes   | ecm516-20262-observacoes-clusterip-service     | 30001 |
+    | consulta      | ecm516-20262-consulta-clusterip-service        | 30002 |
+    | classificacao | ecm516-20262-classificacao-clusterip-service   |  ---  |
+    +---------------+------------------------------------------------+-------+
+
+    Dentro do cluster um pod chama o outro por
+      http://<nome-do-service>:<porta>
+    De fora (seu navegador / PowerShell) voce usa
+      http://localhost:<NodePort>
+
+
+================================================================================
+ 1. CORRECOES OBRIGATORIAS ANTES DE IMPLANTAR
+================================================================================
+
+  Sem estas correcoes a solucao sobe no cluster mas o fluxo de eventos NAO
+  fecha. Faca todas antes de construir as imagens 1.0.0.
+
+--------------------------------------------------------------------------------
+1.1 [ARQ] barramento/index.js - reativar o fan-out e usar os nomes de Service
+--------------------------------------------------------------------------------
+    Hoje 3 dos 4 envios estao comentados. Descomente os tres blocos e troque
+    os enderecos. O corpo do POST /eventos deve ficar assim:
+
+      try { await axios.post('http://ecm516-20262-lembretes-clusterip-service:4000/eventos', evento) }
+      catch(e) {}
+
+      try { await axios.post('http://ecm516-20262-observacoes-clusterip-service:5001/eventos', evento) }
+      catch(e) {}
+
+      try { await axios.post('http://ecm516-20262-consulta-clusterip-service:6000/eventos', evento) }
+      catch(e) {}
+
+      try { await axios.post('http://ecm516-20262-classificacao-clusterip-service:7000/eventos', evento) }
+      catch(e) {}
+
+      res.end()
+
+--------------------------------------------------------------------------------
+1.2 [ARQ] barramento/package.json - dependencia errada
+--------------------------------------------------------------------------------
+    Esta declarado "expressa" (pacote sem relacao com express). O
+    require('express') do index.js so funciona porque "expressa" arrasta o
+    express como dependencia transitiva - e de carona vem mongodb, pg,
+    jsonwebtoken e bcryptjs, que voce nao usa.
+
+    Em "dependencies", REMOVA:
+        "expressa": "^2.1.1"
+    e ACRESCENTE:
+        "express": "^5.2.1"
+
+    Depois rode, dentro de barramento/:
+    [PS] Remove-Item -Recurse -Force node_modules, package-lock.json
+    [PS] npm install
+
+--------------------------------------------------------------------------------
+1.3 [ARQ] classificacao/index.js - endereco do barramento
+--------------------------------------------------------------------------------
+    DE  : axios.post('http://barramento:10000/eventos', {
+    PARA: axios.post('http://ecm516-20262-barramento-de-eventos-service:10000/eventos', {
+
+--------------------------------------------------------------------------------
+1.4 [ARQ] observacoes/index.js - tres correcoes
+--------------------------------------------------------------------------------
+    (a) No handler POST /lembretes/:id/observacoes, o destino esta errado
+        (porta 5002 e rota /observacoes nao existem):
+
+        DE  : await axios.post('http://localhost:5002/observacoes', {
+        PARA: await axios.post('http://ecm516-20262-barramento-de-eventos-service:10000/eventos', {
+
+    (b) Em funcoes.ObservacaoClassificada, o endereco usa localhost:
+
+        DE  : axios.post('http://localhost:10000/eventos', {
+        PARA: axios.post('http://ecm516-20262-barramento-de-eventos-service:10000/eventos', {
+
+    (c) No MESMO envio do item (b) ha dois erros de nome de propriedade.
+        O barramento e o consulta leem "evento.dados" e "dados.lembreteId":
+
+        DE  : dado: {
+                  id: observacao.id,
+                  texto: observacao.texto,
+                  lembrete: observacao.lembreteId,
+                  status: observacao.status
+              }
+        PARA: dados: {
+                  id: observacao.id,
+                  texto: observacao.texto,
+                  lembreteId: observacao.lembreteId,
+                  status: observacao.status
+              }
+
+--------------------------------------------------------------------------------
+1.5 [ARQ] consulta/index.js - duas correcoes
+--------------------------------------------------------------------------------
+    (a) As chaves do objeto "funcoes" nao batem com os tipos de evento
+        emitidos (o despacho e por nome exato, maiuscula importa):
+
+        DE  : lembreteCriado: (lembrete) => {
+        PARA: LembreteCriado: (lembrete) => {
+
+        DE  : observacaoCriada: (observacao) => {
+        PARA: ObservacaoCriada: (observacao) => {
+
+        (ObservacaoAtualizada ja esta correto.)
+
+    (b) O POST /eventos so responde dentro do catch. No caminho de sucesso
+        nenhuma resposta e enviada, e o axios do barramento fica pendurado
+        ate dar timeout, travando todo o fan-out. Garanta uma resposta
+        sempre - por exemplo movendo o res.end() para fora do try/catch,
+        ou acrescentando res.status(200).send({}) no fim do try.
+
+--------------------------------------------------------------------------------
+1.6 [ARQ] lembretes/Dockerfile - fixar a versao da imagem base
+--------------------------------------------------------------------------------
+    DE  : FROM node:alpine
+    PARA: FROM node:26-alpine
+
+    Motivo: "node:alpine" sempre pega a ultima versao publicada, entao o
+    build de hoje e o de amanha podem nao ser iguais. Os outros quatro
+    servicos ja usam node:26-alpine.
+
+--------------------------------------------------------------------------------
+1.7 Verificacao rapida das correcoes
+--------------------------------------------------------------------------------
+    [PS] node --check barramento/index.js
+    [PS] node --check lembretes/index.js
+    [PS] node --check observacoes/index.js
+    [PS] node --check consulta/index.js
+    [PS] node --check classificacao/index.js
+
+    Confirme tambem que nao sobrou nenhum endereco antigo:
+    [PS] Select-String -Path *\index.js -Pattern "localhost|http://barramento|http://lembretes|http://observacoes|http://consulta|http://classificacao"
+    O resultado esperado e vazio.
+
+
+================================================================================
+ 2. BUILD E PUBLICACAO DAS IMAGENS 1.0.0 NO DOCKER HUB
+================================================================================
+
+2.1 [PS] docker login
+    (usuario e senha / access token do Docker Hub)
+
+2.2 Nomes de imagem que vamos usar:
+
+    leoolivieri/ecm516-20262-barramento-de-eventos:1.0.0
+    leoolivieri/ecm516-20262-lembretes:1.0.0
+    leoolivieri/ecm516-20262-observacoes:1.0.0
+    leoolivieri/ecm516-20262-consulta:1.0.0
+    leoolivieri/ecm516-20262-classificacao:1.0.0
+
+2.3 Build e push, um por um. Execute a partir de ap003_microsservicos/
+
+    [PS] docker build -t leoolivieri/ecm516-20262-barramento-de-eventos:1.0.0 .\barramento
+    [PS] docker push  leoolivieri/ecm516-20262-barramento-de-eventos:1.0.0
+
+    [PS] docker build -t leoolivieri/ecm516-20262-lembretes:1.0.0 .\lembretes
+    [PS] docker push  leoolivieri/ecm516-20262-lembretes:1.0.0
+
+    [PS] docker build -t leoolivieri/ecm516-20262-observacoes:1.0.0 .\observacoes
+    [PS] docker push  leoolivieri/ecm516-20262-observacoes:1.0.0
+
+    [PS] docker build -t leoolivieri/ecm516-20262-consulta:1.0.0 .\consulta
+    [PS] docker push  leoolivieri/ecm516-20262-consulta:1.0.0
+
+    [PS] docker build -t leoolivieri/ecm516-20262-classificacao:1.0.0 .\classificacao
+    [PS] docker push  leoolivieri/ecm516-20262-classificacao:1.0.0
+
+2.4 ALTERNATIVA: fazer os 5 de uma vez com um laco no PowerShell.
+    Execute a partir de ap003_microsservicos/
+
+    $repo = "leoolivieri"
+    $tag  = "1.0.0"
+    $svcs = [ordered]@{
+      "barramento"    = "ecm516-20262-barramento-de-eventos"
+      "lembretes"     = "ecm516-20262-lembretes"
+      "observacoes"   = "ecm516-20262-observacoes"
+      "consulta"      = "ecm516-20262-consulta"
+      "classificacao" = "ecm516-20262-classificacao"
+    }
+    foreach ($pasta in $svcs.Keys) {
+      $img = "$repo/$($svcs[$pasta]):$tag"
+      Write-Host "==> $img"
+      docker build -t $img ".\$pasta"
+      if ($?) { docker push $img }
+    }
+
+    Obs.: o PowerShell 5.1 nao aceita "&&"; por isso o "if ($?)".
+
+2.5 Conferir que subiu:
+    [PS] docker images "leoolivieri/*"
+    E no navegador: https://hub.docker.com/u/leoolivieri
+    Os 5 repositorios devem existir, cada um com a tag 1.0.0.
+
+    Se o repositorio nascer privado e o cluster nao conseguir baixar, va em
+    cada repositorio no Docker Hub > Settings > Make public.
+
+
+================================================================================
+ 3. MANIFESTS DO KUBERNETES
+================================================================================
+
+3.1 ATENCAO - LIMPAR OS MANIFESTS ANTIGOS
+
+    Hoje existem em implantacao/kubernetes/ quatro arquivos que vao conflitar
+    com o conjunto novo:
+
+      lembretes.yml                       -> Pod solto, imagem artruiz/lembretes:0.0.1
+      lembretes-deployment.yml            -> imagem artruiz/lembretes (nao e a sua)
+      lembretes-service.yml               -> NodePort 30000
+      lembretes-de-eventos-deployment.yml -> o nome engana: e o BARRAMENTO
+
+    Se voce rodar "kubectl apply -f ." na pasta, esses arquivos entram junto
+    e o cluster sobe com a imagem do professor. Apague os quatro depois de
+    criar o conjunto novo:
+
+    [PS] Remove-Item .\implantacao\kubernetes\lembretes.yml, .\implantacao\kubernetes\lembretes-deployment.yml, .\implantacao\kubernetes\lembretes-service.yml, .\implantacao\kubernetes\lembretes-de-eventos-deployment.yml
+
+3.2 Crie os 5 arquivos abaixo em implantacao/kubernetes/
+    O prefixo numerico e so para a leitura ficar em ordem.
+
+--------------------------------------------------------------------------------
+[ARQ] implantacao/kubernetes/01-barramento.yml
+--------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ecm516-20262-barramento-de-eventos-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: barramento-de-eventos
+  template:
+    metadata:
+      labels:
+        app: barramento-de-eventos
+    spec:
+      containers:
+        - name: ecm516-20262-barramento-de-eventos
+          image: leoolivieri/ecm516-20262-barramento-de-eventos:1.0.0
+          ports:
+            - containerPort: 10000
+          resources:
+            limits:
+              memory: 256Mi
+              cpu: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ecm516-20262-barramento-de-eventos-service
+spec:
+  type: ClusterIP
+  selector:
+    app: barramento-de-eventos
+  ports:
+    - name: barramento-de-eventos
+      protocol: TCP
+      port: 10000
+      targetPort: 10000
+
+--------------------------------------------------------------------------------
+[ARQ] implantacao/kubernetes/02-lembretes.yml
+--------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ecm516-20262-lembretes-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lembretes
+  template:
+    metadata:
+      labels:
+        app: lembretes
+    spec:
+      containers:
+        - name: ecm516-20262-lembretes
+          image: leoolivieri/ecm516-20262-lembretes:1.0.0
+          ports:
+            - containerPort: 4000
+          resources:
+            limits:
+              memory: 256Mi
+              cpu: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ecm516-20262-lembretes-clusterip-service
+spec:
+  type: ClusterIP
+  selector:
+    app: lembretes
+  ports:
+    - name: lembretes
+      protocol: TCP
+      port: 4000
+      targetPort: 4000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ecm516-20262-lembretes-nodeport-service
+spec:
+  type: NodePort
+  selector:
+    app: lembretes
+  ports:
+    - name: lembretes
+      protocol: TCP
+      port: 4000
+      targetPort: 4000
+      nodePort: 30000
+
+--------------------------------------------------------------------------------
+[ARQ] implantacao/kubernetes/03-observacoes.yml
+--------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ecm516-20262-observacoes-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: observacoes
+  template:
+    metadata:
+      labels:
+        app: observacoes
+    spec:
+      containers:
+        - name: ecm516-20262-observacoes
+          image: leoolivieri/ecm516-20262-observacoes:1.0.0
+          ports:
+            - containerPort: 5001
+          resources:
+            limits:
+              memory: 256Mi
+              cpu: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ecm516-20262-observacoes-clusterip-service
+spec:
+  type: ClusterIP
+  selector:
+    app: observacoes
+  ports:
+    - name: observacoes
+      protocol: TCP
+      port: 5001
+      targetPort: 5001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ecm516-20262-observacoes-nodeport-service
+spec:
+  type: NodePort
+  selector:
+    app: observacoes
+  ports:
+    - name: observacoes
+      protocol: TCP
+      port: 5001
+      targetPort: 5001
+      nodePort: 30001
+
+--------------------------------------------------------------------------------
+[ARQ] implantacao/kubernetes/04-consulta.yml
+--------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ecm516-20262-consulta-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: consulta
+  template:
+    metadata:
+      labels:
+        app: consulta
+    spec:
+      containers:
+        - name: ecm516-20262-consulta
+          image: leoolivieri/ecm516-20262-consulta:1.0.0
+          ports:
+            - containerPort: 6000
+          resources:
+            limits:
+              memory: 256Mi
+              cpu: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ecm516-20262-consulta-clusterip-service
+spec:
+  type: ClusterIP
+  selector:
+    app: consulta
+  ports:
+    - name: consulta
+      protocol: TCP
+      port: 6000
+      targetPort: 6000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ecm516-20262-consulta-nodeport-service
+spec:
+  type: NodePort
+  selector:
+    app: consulta
+  ports:
+    - name: consulta
+      protocol: TCP
+      port: 6000
+      targetPort: 6000
+      nodePort: 30002
+
+--------------------------------------------------------------------------------
+[ARQ] implantacao/kubernetes/05-classificacao.yml
+--------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ecm516-20262-classificacao-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: classificacao
+  template:
+    metadata:
+      labels:
+        app: classificacao
+    spec:
+      containers:
+        - name: ecm516-20262-classificacao
+          image: leoolivieri/ecm516-20262-classificacao:1.0.0
+          ports:
+            - containerPort: 7000
+          resources:
+            limits:
+              memory: 256Mi
+              cpu: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ecm516-20262-classificacao-clusterip-service
+spec:
+  type: ClusterIP
+  selector:
+    app: classificacao
+  ports:
+    - name: classificacao
+      protocol: TCP
+      port: 7000
+      targetPort: 7000
+
+3.3 Observacoes sobre os manifests
+
+    - Nenhum Service de classificacao/barramento e NodePort: eles so falam
+      com o resto pelo DNS interno do cluster.
+    - O "containerPort" e apenas documental; quem publica a porta e o
+      Service. Deixe declarado, ajuda quem le.
+    - O nome do Service e a parte que o codigo referencia. Se voce mudar um
+      nome aqui, mude tambem nos index.js do passo 1.
+
+
+================================================================================
+ 4. IMPLANTACAO E TESTE DA SOLUCAO COMPLETA
+================================================================================
+
+4.1 Aplicar tudo. A partir de ap003_microsservicos/
+    [K8S] kubectl apply -f .\implantacao\kubernetes\
+
+4.2 Acompanhar a subida
+    [K8S] kubectl get deployments
+    [K8S] kubectl get pods
+    [K8S] kubectl get services
+
+    Espere os 5 pods em STATUS Running e READY 1/1.
+    Se algum ficar em ErrImagePull / ImagePullBackOff, a imagem nao esta
+    publica ou o nome esta errado - veja o ANEXO A.
+
+4.3 Ver os logs de cada servico (deixe uma janela aberta no barramento, e
+    onde o fluxo de eventos aparece):
+    [K8S] kubectl logs -f deployment/ecm516-20262-barramento-de-eventos-deployment
+
+4.4 TESTE DO FLUXO COMPLETO (execute na ordem)
+
+    (1) Criar um lembrete
+    [PS] Invoke-RestMethod -Uri http://localhost:30000/lembretes -Method Post -ContentType "application/json" -Body '{"texto":"Estudar Kubernetes"}'
+        Esperado: HTTP 201 e o lembrete criado no corpo.
+
+    (2) Listar os lembretes
+    [PS] Invoke-RestMethod -Uri http://localhost:30000/lembretes
+        Esperado: o lembrete criado.
+
+    (3) Criar uma observacao NO LEMBRETE 1, com a palavra "importante"
+        (a palavra-chave que o servico de classificacao procura)
+    [PS] Invoke-RestMethod -Uri http://localhost:30001/lembretes/1/observacoes -Method Post -ContentType "application/json" -Body '{"texto":"revisar HATEOAS, isso e importante"}'
+        Esperado: HTTP 201, observacao com status "aguardando".
+
+    (4) Reler a observacao - agora ja classificada
+    [PS] Invoke-RestMethod -Uri http://localhost:30001/lembretes/1/observacoes
+        Esperado: status mudou de "aguardando" para "importante".
+        ESTE E O TESTE QUE PROVA QUE O FAN-OUT DO BARRAMENTO FUNCIONA:
+        observacoes -> barramento -> classificacao -> barramento -> observacoes
+
+    (5) Consultar a base agregada
+    [PS] Invoke-RestMethod -Uri http://localhost:30002/lembretes
+        Esperado: o lembrete 1 com a lista de observacoes dentro.
+
+    (6) Teste de contraste: observacao SEM a palavra-chave
+    [PS] Invoke-RestMethod -Uri http://localhost:30001/lembretes/1/observacoes -Method Post -ContentType "application/json" -Body '{"texto":"anotacao qualquer"}'
+    [PS] Invoke-RestMethod -Uri http://localhost:30001/lembretes/1/observacoes
+        Esperado: essa observacao fica com status "normal".
+
+4.5 Teste de resiliencia (bom para o relatorio)
+    Derrube um pod e veja o Kubernetes recria-lo:
+    [K8S] kubectl get pods
+    [K8S] kubectl delete pod <nome-do-pod-de-classificacao>
+    [K8S] kubectl get pods -w
+    O ReplicaSet sobe outro pod sozinho. Repita o teste 4.4 (3) e (4).
+
+4.6 Teste de escala (opcional)
+    [K8S] kubectl scale deployment ecm516-20262-lembretes-deployment --replicas=3
+    [K8S] kubectl get pods
+    ATENCAO: os servicos guardam estado em memoria (o objeto "lembretes").
+    Com 3 replicas cada requisicao pode cair num pod diferente e a leitura
+    fica inconsistente. Isso NAO e um bug do Kubernetes - e a razao pela
+    qual microsservicos com estado precisam de banco externo. Vale citar no
+    relatorio. Volte para 1 replica depois:
+    [K8S] kubectl scale deployment ecm516-20262-lembretes-deployment --replicas=1
+
+--> FIM DA PARTE A. Nao apague nada: a Parte B parte desta base.
+
+
+================================================================================
+ 5. RICHARDSON NIVEL 3 (HATEOAS) - O QUE MUDAR EM CADA SERVICO
+================================================================================
+
+5.1 O MODELO DE MATURIDADE DE RICHARDSON, EM UMA LINHA CADA
+
+    Nivel 0 - "pantano do POX": um unico endpoint, um unico verbo, o que
+              fazer vai no corpo. HTTP e so transporte.
+    Nivel 1 - RECURSOS: varias URIs, uma por recurso (/lembretes,
+              /lembretes/1/observacoes).
+    Nivel 2 - VERBOS HTTP e CODIGOS DE STATUS: GET le, POST cria, PUT
+              atualiza, DELETE remove; 200, 201, 400, 404 com significado.
+    Nivel 3 - CONTROLES DE HIPERMIDIA (HATEOAS): a resposta carrega os
+              links das proximas acoes possiveis. O cliente navega pela API
+              seguindo links, sem ter URLs fixas no codigo.
+
+5.2 ONDE A SUA SOLUCAO ESTA HOJE
+
+    Ja no nivel 2, com furos. Antes de dizer "nivel 3" feche os furos do
+    nivel 2 (itens 5.4) e so depois acrescente os links (itens 5.5).
+
+5.3 DECISAO DE PROJETO: como montar os links
+
+    Um pod nao sabe qual e a URL publica dele. Resolva injetando as URLs
+    por variavel de ambiente no Deployment - sem isso os links sairiam
+    apontando para dentro do cluster e nao funcionariam no navegador.
+
+    Variaveis a injetar (valores para o Docker Desktop):
+      URL_LEMBRETES    = http://localhost:30000
+      URL_OBSERVACOES  = http://localhost:30001
+      URL_CONSULTA     = http://localhost:30002
+      URL_BARRAMENTO   = http://ecm516-20262-barramento-de-eventos-service:10000
+
+    No codigo, leia com valor padrao:
+      const URL_LEMBRETES = process.env.URL_LEMBRETES || 'http://localhost:4000'
+
+    Ganho extra: os enderecos deixam de estar fixos no codigo, o que era
+    exatamente o problema que voce corrigiu na mao no passo 1.
+
+    O bloco "env:" entra em cada container dos manifests, assim:
+
+          containers:
+            - name: ecm516-20262-lembretes
+              image: leoolivieri/ecm516-20262-lembretes:2.0.0
+              env:
+                - name: URL_LEMBRETES
+                  value: "http://localhost:30000"
+                - name: URL_OBSERVACOES
+                  value: "http://localhost:30001"
+                - name: URL_CONSULTA
+                  value: "http://localhost:30002"
+                - name: URL_BARRAMENTO
+                  value: "http://ecm516-20262-barramento-de-eventos-service:10000"
+
+    (Se preferir centralizar, use um ConfigMap com envFrom - opcional.)
+
+5.4 FECHAR OS FUROS DO NIVEL 2
+
+    [ARQ] lembretes/index.js
+      (a) Renomear a chave "contador" para "id" no corpo das respostas e no
+          evento emitido. Um recurso REST tem "id", nao "contador".
+          CUIDADO - ISSO SE PROPAGA: consulta/index.js usa
+          lembrete.contador em LembreteCriado; troque para lembrete.id.
+      (b) Criar GET /lembretes/:id, respondendo 404 quando nao existir.
+      (c) Validar a entrada no POST: se "texto" vier vazio ou ausente,
+          responder 400 com uma mensagem de erro, sem criar nada.
+      (d) No POST, alem do 201, enviar o cabecalho Location com a URI do
+          recurso criado: res.location(...) antes do send.
+
+    [ARQ] observacoes/index.js
+      (a) O POST devolve hoje o array inteiro de observacoes. Devolva
+          APENAS o recurso criado, com 201 e cabecalho Location.
+      (b) Criar GET /lembretes/:id/observacoes/:idObs com 404.
+      (c) Validar "texto" -> 400.
+      (d) res.end({}) ignora o argumento; use res.end() ou res.send({}).
+
+    [ARQ] consulta/index.js
+      (a) Criar GET /lembretes/:id com 404 quando o lembrete nao estiver na
+          base de leitura.
+      (b) Garantir resposta no POST /eventos (ja pedido em 1.5b).
+
+5.5 ACRESCENTAR OS CONTROLES DE HIPERMIDIA
+
+    Padronize o formato. Sugestao (estilo HAL, simples de justificar):
+    cada recurso ganha um objeto "_links", onde cada chave e uma relacao
+    (rel) e o valor tem "href" e "method".
+
+    (a) [ARQ] lembretes/index.js - GET /lembretes (colecao)
+
+        {
+          "_links": {
+            "self":     { "href": "http://localhost:30000/lembretes", "method": "GET" },
+            "criar":    { "href": "http://localhost:30000/lembretes", "method": "POST" },
+            "consulta": { "href": "http://localhost:30002/lembretes", "method": "GET" }
+          },
+          "itens": [
+            {
+              "id": 1,
+              "texto": "Estudar Kubernetes",
+              "_links": {
+                "self":            { "href": "http://localhost:30000/lembretes/1", "method": "GET" },
+                "observacoes":     { "href": "http://localhost:30001/lembretes/1/observacoes", "method": "GET" },
+                "criarObservacao": { "href": "http://localhost:30001/lembretes/1/observacoes", "method": "POST" }
+              }
+            }
+          ]
+        }
+
+        Repare que a colecao virou objeto com "itens". O formato antigo era
+        um mapa {1: {...}, 2: {...}} e nao tinha onde pendurar os _links da
+        colecao. Sugestao: escreva uma funcao unica
+        montaLembrete(lembrete) que devolve o objeto ja com _links, e use
+        ela no GET da colecao, no GET por id e no POST - assim o formato
+        nunca divergir entre as rotas.
+
+    (b) [ARQ] lembretes/index.js - GET /lembretes/:id
+        Mesmo objeto do item da colecao, com _links.self e a relacao
+        "colecao" apontando de volta para /lembretes.
+
+    (c) [ARQ] lembretes/index.js - POST /lembretes
+        HTTP 201 + Location + corpo com _links (self, observacoes,
+        criarObservacao, colecao).
+
+    (d) [ARQ] observacoes/index.js - GET /lembretes/:id/observacoes
+
+        {
+          "_links": {
+            "self":     { "href": "http://localhost:30001/lembretes/1/observacoes", "method": "GET" },
+            "criar":    { "href": "http://localhost:30001/lembretes/1/observacoes", "method": "POST" },
+            "lembrete": { "href": "http://localhost:30000/lembretes/1", "method": "GET" }
+          },
+          "itens": [
+            {
+              "id": "uuid...",
+              "texto": "revisar HATEOAS, isso e importante",
+              "status": "importante",
+              "_links": {
+                "self":     { "href": "http://localhost:30001/lembretes/1/observacoes/uuid...", "method": "GET" },
+                "lembrete": { "href": "http://localhost:30000/lembretes/1", "method": "GET" }
+              }
+            }
+          ]
+        }
+
+    (e) [ARQ] observacoes/index.js - LINKS QUE DEPENDEM DO ESTADO
+        Este e o ponto que separa "nivel 3 de verdade" de "nivel 2 com
+        links decorativos". Monte os _links conforme o status:
+
+          status "aguardando"  -> NAO inclua a relacao "reclassificar".
+                                  Inclua a relacao "classificacao" apenas
+                                  informando que o processamento esta em
+                                  curso.
+          status "importante"  -> inclua a relacao "reclassificar"
+                 ou "normal"      (POST, reenviando para classificacao).
+
+        Ou seja: o cliente descobre o que pode fazer lendo a resposta, nao
+        consultando documentacao. Destaque isso no relatorio - e a
+        definicao de HATEOAS.
+
+    (f) [ARQ] consulta/index.js - GET /lembretes
+        A base de leitura e agregada, entao ela e o melhor lugar para
+        mostrar navegacao. Em cada lembrete inclua _links.self (no proprio
+        consulta), e tambem "lembreteOriginal" (no servico de lembretes) e
+        "observacoes" (no servico de observacoes). Assim o cliente entra
+        pela consulta e chega aos servicos de escrita seguindo links.
+
+    (g) OPCIONAL, mas rende pontos: crie GET / (raiz) em cada servico
+        devolvendo so os _links de entrada da API - o "ponto de partida"
+        que um cliente HATEOAS usa para se orientar. Exemplo para o
+        servico de lembretes:
+
+        {
+          "_links": {
+            "self":      { "href": "http://localhost:30000/", "method": "GET" },
+            "lembretes": { "href": "http://localhost:30000/lembretes", "method": "GET" },
+            "criar":     { "href": "http://localhost:30000/lembretes", "method": "POST" }
+          }
+        }
+
+    (h) OPCIONAL: responder com Content-Type "application/hal+json" em vez
+        de "application/json", deixando explicito o formato de hipermidia:
+        res.type('application/hal+json')
+
+5.6 O QUE NAO MUDA
+
+    O barramento de eventos NAO participa do nivel 3. Ele nao expoe uma API
+    REST para o usuario - e comunicacao interna assincrona entre servicos.
+    Nao invente _links nele. (Voce ainda vai gerar a imagem 2.0.0 dele, mas
+    so por causa das variaveis de ambiente do item 5.3.)
+
+    Explique isso no relatorio: o modelo de Richardson avalia APIs REST
+    voltadas a clientes, nao o transporte de eventos interno.
+
+5.7 VERIFICACAO LOCAL ANTES DE GERAR AS IMAGENS
+
+    [PS] node --check lembretes/index.js
+    [PS] node --check observacoes/index.js
+    [PS] node --check consulta/index.js
+
+    Se quiser testar fora do cluster, rode cada servico com as variaveis
+    apontando para localhost nas portas originais:
+    [PS] $env:URL_LEMBRETES="http://localhost:4000"; $env:URL_OBSERVACOES="http://localhost:5001"; $env:URL_CONSULTA="http://localhost:6000"; $env:URL_BARRAMENTO="http://localhost:10000"; node .\lembretes\index.js
+
+
+================================================================================
+ 6. BUILD E PUBLICACAO DAS IMAGENS 2.0.0 NO DOCKER HUB
+================================================================================
+
+6.1 NAO sobrescreva a tag 1.0.0. Ela precisa continuar no Docker Hub para
+    voce demonstrar as duas versoes e o rollback (passo 7.5).
+
+6.2 Build e push das 5 imagens com a tag 2.0.0.
+    A partir de ap003_microsservicos/
+
+    [PS] docker build -t leoolivieri/ecm516-20262-barramento-de-eventos:2.0.0 .\barramento
+    [PS] docker push  leoolivieri/ecm516-20262-barramento-de-eventos:2.0.0
+
+    [PS] docker build -t leoolivieri/ecm516-20262-lembretes:2.0.0 .\lembretes
+    [PS] docker push  leoolivieri/ecm516-20262-lembretes:2.0.0
+
+    [PS] docker build -t leoolivieri/ecm516-20262-observacoes:2.0.0 .\observacoes
+    [PS] docker push  leoolivieri/ecm516-20262-observacoes:2.0.0
+
+    [PS] docker build -t leoolivieri/ecm516-20262-consulta:2.0.0 .\consulta
+    [PS] docker push  leoolivieri/ecm516-20262-consulta:2.0.0
+
+    [PS] docker build -t leoolivieri/ecm516-20262-classificacao:2.0.0 .\classificacao
+    [PS] docker push  leoolivieri/ecm516-20262-classificacao:2.0.0
+
+6.3 ALTERNATIVA com laco: e o mesmo bloco do item 2.4, trocando so a linha
+    $tag  = "1.0.0"
+    por
+    $tag  = "2.0.0"
+
+6.4 Conferir as tags no Docker Hub
+    Cada um dos 5 repositorios deve listar 1.0.0 E 2.0.0.
+    [PS] docker images "leoolivieri/*"
+
+
+================================================================================
+ 7. ATUALIZAR O CLUSTER DE 1.0.0 PARA 2.0.0 (E ROLLBACK)
+================================================================================
+
+7.1 Atualize os manifests:
+    - troque ":1.0.0" por ":2.0.0" nas 5 linhas "image:"
+    - acrescente os blocos "env:" do item 5.3 nos containers de lembretes,
+      observacoes, consulta e classificacao (o barramento so precisa de
+      URL_BARRAMENTO se voce o tiver parametrizado)
+
+7.2 Aplicar. A partir de ap003_microsservicos/
+    [K8S] kubectl apply -f .\implantacao\kubernetes\
+    [K8S] kubectl rollout status deployment/ecm516-20262-lembretes-deployment
+    [K8S] kubectl rollout status deployment/ecm516-20262-observacoes-deployment
+    [K8S] kubectl rollout status deployment/ecm516-20262-consulta-deployment
+    [K8S] kubectl rollout status deployment/ecm516-20262-classificacao-deployment
+    [K8S] kubectl rollout status deployment/ecm516-20262-barramento-de-eventos-deployment
+
+    O Kubernetes faz rolling update: sobe o pod novo, espera ficar pronto,
+    derruba o antigo. Vale mencionar no relatorio - e implantacao sem
+    indisponibilidade.
+
+7.3 ALTERNATIVA sem editar YAML (util para demonstrar ao vivo):
+    [K8S] kubectl set image deployment/ecm516-20262-lembretes-deployment ecm516-20262-lembretes=leoolivieri/ecm516-20262-lembretes:2.0.0
+    (o nome antes do "=" e o nome do CONTAINER, nao do deployment)
+
+7.4 TESTE DO NIVEL 3
+    [PS] Invoke-RestMethod -Uri http://localhost:30000/lembretes | ConvertTo-Json -Depth 6
+        Confira: existe "_links" na colecao e em cada item.
+
+    [PS] Invoke-RestMethod -Uri http://localhost:30000/lembretes -Method Post -ContentType "application/json" -Body '{"texto":"Testar HATEOAS"}' -ResponseHeadersVariable h; $h.Location
+        Confira: HTTP 201 e o cabecalho Location preenchido.
+        (Obs.: -ResponseHeadersVariable exige PowerShell 6+. No PowerShell
+        5.1 use Invoke-WebRequest e leia $resp.Headers.Location.)
+
+    Agora NAVEGUE seguindo os links, sem digitar URL - e a prova do nivel 3:
+    [PS] $raiz = Invoke-RestMethod -Uri http://localhost:30000/lembretes
+    [PS] $obsUrl = $raiz.itens[0]._links.observacoes.href
+    [PS] Invoke-RestMethod -Uri $obsUrl | ConvertTo-Json -Depth 6
+
+    Teste os codigos de status do nivel 2:
+    [PS] try { Invoke-RestMethod -Uri http://localhost:30000/lembretes/9999 } catch { $_.Exception.Response.StatusCode }
+        Esperado: NotFound (404).
+    [PS] try { Invoke-RestMethod -Uri http://localhost:30000/lembretes -Method Post -ContentType "application/json" -Body '{}' } catch { $_.Exception.Response.StatusCode }
+        Esperado: BadRequest (400).
+
+    Teste os links dependentes de estado (item 5.5e):
+    [PS] Invoke-RestMethod -Uri http://localhost:30001/lembretes/1/observacoes -Method Post -ContentType "application/json" -Body '{"texto":"algo importante"}' | ConvertTo-Json -Depth 6
+        Logo apos criar, status "aguardando" e SEM a relacao reclassificar.
+    [PS] Invoke-RestMethod -Uri http://localhost:30001/lembretes/1/observacoes | ConvertTo-Json -Depth 6
+        Depois da classificacao, status "importante" e COM a relacao.
+
+7.5 ROLLBACK para 1.0.0 (demonstra as duas versoes publicadas)
+    [K8S] kubectl rollout history deployment/ecm516-20262-lembretes-deployment
+    [K8S] kubectl rollout undo deployment/ecm516-20262-lembretes-deployment
+    [K8S] kubectl rollout status deployment/ecm516-20262-lembretes-deployment
+    [PS]  Invoke-RestMethod -Uri http://localhost:30000/lembretes
+          Os "_links" desaparecem - voltou para a 1.0.0.
+
+    Para voltar a 2.0.0, rode o undo de novo ou reaplique os manifests.
+
+
+================================================================================
+ ANEXO A - COMANDOS DE DIAGNOSTICO
+================================================================================
+
+Estado geral
+  kubectl get all
+  kubectl get pods -o wide
+  kubectl get events --sort-by=.metadata.creationTimestamp
+
+Um pod nao sobe / fica em ImagePullBackOff
+  kubectl describe pod <nome-do-pod>
+  Olhe a secao Events no fim. Causas comuns:
+    - repositorio privado no Docker Hub  -> torne publico
+    - nome ou tag de imagem digitado errado
+    - imagem existe local mas nao foi feito push
+
+Pod sobe e morre (CrashLoopBackOff)
+  kubectl logs <nome-do-pod>
+  kubectl logs <nome-do-pod> --previous     (logs da execucao anterior)
+
+Servicos nao se acham (o erro classico deste projeto)
+  kubectl get endpoints
+    Se um Service aparecer com ENDPOINTS vazio, o "selector" do Service nao
+    casa com os "labels" do pod. Compare os dois no YAML.
+
+  Testar o DNS interno de dentro de um pod:
+  kubectl exec -it deployment/ecm516-20262-lembretes-deployment -- sh
+    # dentro do pod:
+    wget -qO- http://ecm516-20262-barramento-de-eventos-service:10000/eventos
+    exit
+
+Acessar um servico sem NodePort (ex.: classificacao)
+  kubectl port-forward deployment/ecm516-20262-classificacao-deployment 7000:7000
+  Em outra janela: Invoke-RestMethod -Uri http://localhost:7000/eventos -Method Post ...
+
+Acompanhar o fluxo de eventos ao vivo (abra 2 ou 3 janelas)
+  kubectl logs -f deployment/ecm516-20262-barramento-de-eventos-deployment
+  kubectl logs -f deployment/ecm516-20262-classificacao-deployment
+  kubectl logs -f deployment/ecm516-20262-consulta-deployment
+
+Recomecar do zero
+  kubectl delete -f .\implantacao\kubernetes\
+  kubectl apply  -f .\implantacao\kubernetes\
+
+
+================================================================================
+ ANEXO B - INGRESS (OPCIONAL, MELHORA O HATEOAS)
+================================================================================
+
+Com NodePort cada servico tem uma porta diferente (30000, 30001, 30002), e
+os links do nivel 3 ficam apontando para hosts diferentes. Funciona, mas
+nao e elegante. Com um Ingress tudo fica sob http://localhost e os links
+passam a ser caminhos do mesmo host - bem mais proximo do que se espera de
+uma API HATEOAS.
+
+B.1 Instalar o controlador nginx no Docker Desktop
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+    kubectl get pods -n ingress-nginx
+    (espere o pod do controller ficar Running)
+
+B.2 [ARQ] implantacao/kubernetes/06-ingress.yml
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ecm516-20262-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: localhost
+      http:
+        paths:
+          - path: /api/lembretes
+            pathType: Prefix
+            backend:
+              service:
+                name: ecm516-20262-lembretes-clusterip-service
+                port:
+                  number: 4000
+          - path: /api/observacoes
+            pathType: Prefix
+            backend:
+              service:
+                name: ecm516-20262-observacoes-clusterip-service
+                port:
+                  number: 5001
+          - path: /api/consulta
+            pathType: Prefix
+            backend:
+              service:
+                name: ecm516-20262-consulta-clusterip-service
+                port:
+                  number: 6000
+
+B.3 Se adotar o Ingress, as variaveis do item 5.3 mudam para:
+      URL_LEMBRETES   = http://localhost/api/lembretes
+      URL_OBSERVACOES = http://localhost/api/observacoes
+      URL_CONSULTA    = http://localhost/api/consulta
+    e voce provavelmente vai querer ajustar as rotas do Express para o
+    prefixo /api/... (ou usar rewrite-target no Ingress).
+
+B.4 Custo/beneficio: mais uma peca para instalar e depurar. Se o prazo
+    estiver curto, entregue com NodePort e cite o Ingress no relatorio como
+    evolucao possivel.
+
+
+================================================================================
+ ANEXO C - CHECKLIST DE ENTREGA
+================================================================================
+
+PARTE A - Kubernetes + imagens 1.0.0
+  [ ] Correcoes 1.1 a 1.6 aplicadas
+  [ ] 5 imagens com tag 1.0.0 publicadas e PUBLICAS no Docker Hub
+  [ ] Manifests antigos (artruiz/...) removidos
+  [ ] 5 Deployments + 5 Services ClusterIP + 3 Services NodePort aplicados
+  [ ] kubectl get pods mostra 5 pods Running 1/1
+  [ ] Teste 4.4: observacao criada com "importante" muda de status sozinha
+  [ ] Teste 4.4 (5): consulta devolve lembrete + observacoes agregados
+  [ ] Teste 4.5: pod deletado e recriado pelo Kubernetes
+  [ ] Prints: Docker Hub com as tags, kubectl get all, respostas dos testes
+
+PARTE B - Richardson nivel 3 + imagens 2.0.0
+  [ ] Furos do nivel 2 fechados (404, 400, 201 + Location, id em vez de
+      contador)
+  [ ] "_links" nas colecoes e em cada recurso de lembretes, observacoes e
+      consulta
+  [ ] Links dependentes de estado em observacoes (item 5.5e)
+  [ ] URLs vindas de variavel de ambiente, nao fixas no codigo
+  [ ] 5 imagens com tag 2.0.0 publicadas (1.0.0 preservada)
+  [ ] Blocos "env:" nos manifests
+  [ ] Rolling update concluido (kubectl rollout status)
+  [ ] Teste 7.4: navegacao seguindo href, sem digitar URL
+  [ ] Teste 7.5: rollback para 1.0.0 demonstrado
+  [ ] Relatorio explica por que o barramento nao entra no nivel 3 (5.6)
+  [ ] Prints: JSON com _links, cabecalho Location, 404 e 400, rollout
+      history
+
+================================================================================
+ FIM
+================================================================================

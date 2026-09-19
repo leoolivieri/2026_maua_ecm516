@@ -3,32 +3,36 @@ kind: Deployment
 metadata:
   name: ecm516-20262-barramento-de-eventos-deployment
 spec:
-  replicas: 1   
+  replicas: 1
   selector:
-      matchLabels:
-        app: barramento-de-eventos
+    matchLabels:
+      app: barramento-de-eventos
   template:
     metadata:
       labels:
-        app: barramento-de-eventos    
+        app: barramento-de-eventos
     spec:
-      containers: 
+      containers:
         - name: ecm516-20262-barramento-de-eventos
-          image: leoolivieri/ecm516-20262-barramento-de-eventos
+          image: leoolivieri/ecm516-20262-barramento-de-eventos:2.0.0
+          ports:
+            - containerPort: 10000
           resources:
+            requests:
+              memory: 128Mi
+              cpu: 250m
             limits:
               memory: 256Mi
-              cpu: 1
+              cpu: 500m
 ---
-
 apiVersion: v1
 kind: Service
 metadata:
   name: ecm516-20262-barramento-de-eventos-service
-spec: 
+spec:
+  type: ClusterIP
   selector:
     app: barramento-de-eventos
-  type: ClusterIP
   ports:
     - name: barramento-de-eventos
       protocol: TCP

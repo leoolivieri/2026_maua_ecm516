@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ecm516-20262-lembretes-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lembretes
+  template:
+    metadata:
+      labels:
+        app: lembretes
+    spec:
+      containers:
+        - name: ecm516-20262-lembretes
+          image: leoolivieri/ecm516-20262-lembretes:2.0.0
+          ports:
+            - containerPort: 4000
+          env:
+            - name: URL_LEMBRETES
+              value: "http://localhost:30000"
+            - name: URL_OBSERVACOES
+              value: "http://localhost:30001"
+            - name: URL_CONSULTA
+              value: "http://localhost:30002"
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 250m
+            limits:
+              memory: 256Mi
+              cpu: 500m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ecm516-20262-lembretes-clusterip-service
+spec:
+  type: ClusterIP
+  selector:
+    app: lembretes
+  ports:
+    - name: lembretes
+      protocol: TCP
+      port: 4000
+      targetPort: 4000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ecm516-20262-lembretes-nodeport-service
+spec:
+  type: NodePort
+  selector:
+    app: lembretes
+  ports:
+    - name: lembretes
+      protocol: TCP
+      port: 4000
+      targetPort: 4000
+      nodePort: 30000
