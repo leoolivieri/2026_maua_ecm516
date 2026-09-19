@@ -1,40 +1,53 @@
 const axios = require('axios')
 const express = require('express')
 const app = express()
-app.use(express.json())
+app.use(express.json()) //middleware
 
-const lembretes = {}
+const lembretes = { }
 let contador = 0
+/*
+{
+	1: {
+		id: 1,
+		texto: 'fazer cafe'
+	},
+	2: {
+		id: 2,
+		texto: 'Natacao'
+	}
+}
+*/
 
-// responde requisições de leitura e consulta
 app.get('/lembretes', (req, res) => {
-    res.send(lembretes) // retorna todos os lembretes
+	res.send(lembretes)
 })
 
-// responde requisições de criação: é chamado quando quer cirar ou enviar um dado novo
 app.post('/lembretes', async (req, res) => {
+    // incrementar o id 
+    // extrair propriedade texto do corpo da requisicao
+    // cadastrar na base, tal qual mostra o exemplo
+    // responder trocando o status para 201 e, no corpo, incluir o lembrete criado
     contador++
-    const { texto } = req.body // pega o texto enviado pelo cliente
-    lembretes[contador] = {contador, texto} // salva no objeto
-
-    // emite evento para barramento de eventos
-    // porta 10000 é onde o barramento de eventos está rodando
-    // await axios.post("http://localhost:10000/eventos", {
-    await axios.post("http://barramento:10000/eventos", {
-        tipo: 'LembreteCriado',
-        dados: {contador, texto} // equivale a { contador: 1, texto: "Fazer café" }
+    const { texto } = req.body
+    lembretes[contador] = {contador, texto}
+    await axios.post('http://ecm516-20262-barramento-de-eventos-service 10000/eventos', {
+        tipo : "LembreteCriado",
+        dados: {contador, texto}
     })
-    // uso do async await: o código só continua depois que a requisição for feita, ou seja, depois que o evento for enviado para o barramento de eventos
-    //Ordem garantida — o res.send só executa depois que o axios terminar
 
-    res.status(200).send(lembretes[contador]) // retorna o lembrete criado
+    res.status(201).send(lembretes[contador])
+      
 })
 
-app.post ('/eventos', (req, res) => {
-    console.log('Recebido evento', req.body.tipo)
-    res.end({})
+app.post('/eventos', (req, res) => {
+    const evento = req.body
+    console.log(evento)
+    res.end()
 })
 
-app.listen(4000, () => {
-    console.log('Lembretes. Porta 4000.')
+const port = 4000
+app.listen(port, () => {
+    console.log("Nova versão")
+    console.log("Agora usando o Docker Hub");
+	console.log(`Lembretes. Porta ${port}.`)
 })
